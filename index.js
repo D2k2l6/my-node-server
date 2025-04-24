@@ -1,120 +1,116 @@
-const express = require('express');
-const app = express();
-const PORT = 3000;
+const http = require('http');
+const url = require('url');
+const fs = require('fs');
+const path = require('path');
+const fileHandler = require('./fileHandler');
 
-// Middleware to parse JSON bodies
-app.use(express.json());
+// Initialize the data file
+fileHandler.initializeDataFile();
 
-// Sample data
-const data = {
-    movies: [
-        { id: 1, title: "Inception", director: "Christopher Nolan", releaseYear: 2010, genres: ["Sci-Fi", "Action"] },
-        { id: 2, title: "The Matrix", director: "The Wachowskis", releaseYear: 1999, genres: ["Sci-Fi", "Action"] }
-    ],
-    series: [
-        { id: 1, title: "Breaking Bad", creator: "Vince Gilligan", seasons: 5, genres: ["Crime", "Drama"] },
-        { id: 2, title: "Stranger Things", creator: "The Duffer Brothers", seasons: 4, genres: ["Sci-Fi", "Horror"] }
-    ],
-    songs: [
-        { id: 1, title: "Bohemian Rhapsody", artist: "Queen", releaseYear: 1975, album: "A Night at the Opera" },
-        { id: 2, title: "Blinding Lights", artist: "The Weeknd", releaseYear: 2019, album: "After Hours" }
-    ]
+// Helper function to parse JSON body
+const parseRequestBody = (req) => {
+    return new Promise((resolve, reject) => {
+        let body = '';
+        req.on('data', chunk => {
+            body += chunk.toString();
+        });
+        req.on('end', () => {
+            try {
+                resolve(JSON.parse(body));
+            } catch (err) {
+                reject(err);
+            }
+        });
+    });
 };
 
-// Helper function to find and update arrays
-const findAndUpdate = (array, id, newData) => {
-    const index = array.findIndex(item => item.id === id);
-    if (index !== -1) {
-        array[index] = { ...array[index], ...newData };
-        return array;
-    }
-    return null;
-};
+// Create the server
+const server = http.createServer(async (req, res) => {
+    const parsedUrl = url.parse(req.url, true);
+    const method = req.method;
+    const path = parsedUrl.pathname;
 
-// Movies routes
-app.get('/movies', (req, res) => {
-    res.json({ movies: data.movies });
-});
+    // Set headers
+    res.setHeader('Content-Type', 'application/json');
 
-app.post('/movies', (req, res) => {
-    const newMovie = { id: Date.now(), ...req.body };
-    data.movies.push(newMovie);
-    res.json({ movies: data.movies });
-});
+    // Serve API documentation on the root path
+    if (path === '/' && method === 'GET') {
+        res.setHeader('Content-Type', 'text/html');
+        const htmlFilePath = path.join(__dirname, 'api-doc.html');
+        fs.readFile(htmlFilePath, 'utf-8', (err, data) => {
+            if (err) {
+                res.writeHead(500);
+                res.end('<h1>Internal Server Error</h1>');
+            } else {
+                res.writeHead(200);
+                res.end(data);
+            }
+        });
+    } else if (path === '/movies') {
+        const data = fileHandler.readData();
 
-app.put('/movies/:id', (req, res) => {
-    const updatedMovies = findAndUpdate(data.movies, parseInt(req.params.id), req.body);
-    if (updatedMovies) {
-        res.json({ movies: updatedMovies });
+        if (method === 'GET') {
+            res.writeHead(200);
+            res.end(JSON.stringify({ movies: data.movies }));
+        } else if (method === 'POST') {
+            try {
+                const newMovie = await parseRequestBody(req);
+                newMovie.id = Date.now();
+                data.movies.push(newMovie);
+                fileHandler.writeData(data);
+                res.writeHead(201);
+                res.end(JSON.stringify({ movies: data.movies }));
+            } catch (err) {
+                res.writeHead(400);
+                res.end(JSON.stringify({ error: 'Invalid JSON body' }));
+            }
+        } else {
+            res.writeHead(405);
+            res.end(JSON.stringify({ error: 'Method not allowed' }));
+        }
+    } else if (path.startsWith('/movies/') && method === 'PUT') {
+        const id = parseInt(path.split('/')[2]);
+        const data = fileHandler.readData();
+        const index = data.movies.findIndex(movie => movie.id === id);
+
+        if (index !== -1) {
+            try {
+                const updatedMovie = await parseRequestBody(req);
+                data.movies[index] = { ...data.movies[index], ...updatedMovie };
+                fileHandler.writeData(data);
+                res.writeHead(200);
+                res.end(JSON.stringify({ movies: data.movies }));
+            } catch (err) {
+                res.writeHead(400);
+                res.end(JSON.stringify({ error: 'Invalid JSON body' }));
+            }
+        } else {
+            res.writeHead(404);
+            res.end(JSON.stringify({ error: 'Movie not found' }));
+        }
+    } else if (path.startsWith('/movies/') && method === 'DELETE') {
+        const id = parseInt(path.split('/')[2]);
+        const data = fileHandler.readData();
+        const filteredMovies = data.movies.filter(movie => movie.id !== id);
+
+        if (filteredMovies.length !== data.movies.length) {
+            data.movies = filteredMovies;
+            fileHandler.writeData(data);
+            res.writeHead(200);
+            res.end(JSON.stringify({ movies: data.movies }));
+        } else {
+            res.writeHead(404);
+            res.end(JSON.stringify({ error: 'Movie not found' }));
+        }
     } else {
-        res.status(404).json({ error: "Movie not found" });
+        // Handle non-existent paths
+        res.writeHead(404);
+        res.end(JSON.stringify({ error: 'Route not found' }));
     }
-});
-
-app.delete('/movies/:id', (req, res) => {
-    const id = parseInt(req.params.id);
-    data.movies = data.movies.filter(movie => movie.id !== id);
-    res.json({ movies: data.movies });
-});
-
-// Series routes
-app.get('/series', (req, res) => {
-    res.json({ series: data.series });
-});
-
-app.post('/series', (req, res) => {
-    const newSeries = { id: Date.now(), ...req.body };
-    data.series.push(newSeries);
-    res.json({ series: data.series });
-});
-
-app.put('/series/:id', (req, res) => {
-    const updatedSeries = findAndUpdate(data.series, parseInt(req.params.id), req.body);
-    if (updatedSeries) {
-        res.json({ series: updatedSeries });
-    } else {
-        res.status(404).json({ error: "Series not found" });
-    }
-});
-
-app.delete('/series/:id', (req, res) => {
-    const id = parseInt(req.params.id);
-    data.series = data.series.filter(series => series.id !== id);
-    res.json({ series: data.series });
-});
-
-// Songs routes
-app.get('/songs', (req, res) => {
-    res.json({ songs: data.songs });
-});
-
-app.post('/songs', (req, res) => {
-    const newSong = { id: Date.now(), ...req.body };
-    data.songs.push(newSong);
-    res.json({ songs: data.songs });
-});
-
-app.put('/songs/:id', (req, res) => {
-    const updatedSongs = findAndUpdate(data.songs, parseInt(req.params.id), req.body);
-    if (updatedSongs) {
-        res.json({ songs: updatedSongs });
-    } else {
-        res.status(404).json({ error: "Song not found" });
-    }
-});
-
-app.delete('/songs/:id', (req, res) => {
-    const id = parseInt(req.params.id);
-    data.songs = data.songs.filter(song => song.id !== id);
-    res.json({ songs: data.songs });
-});
-
-// 404 for any other route
-app.use((req, res) => {
-    res.status(404).json({ error: "Route not found" });
 });
 
 // Start the server
-app.listen(PORT, () => {
+const PORT = 3000;
+server.listen(PORT, () => {
     console.log(`Server is running on http://localhost:${PORT}`);
 });
