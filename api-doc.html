@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API Documentation</title>
+</head>
+<body>
+    <h1>Welcome to the Movie API</h1>
+    <p>This API allows you to manage a collection of movies. Below are the available endpoints:</p>
+
+    <h2>Endpoints</h2>
+    <ul>
+        <li>
+            <strong>GET /movies</strong>
+            <p>Fetch a list of all movies.</p>
+        </li>
+        <li>
+            <strong>POST /movies</strong>
+            <p>Add a new movie. Example JSON body:</p>
+            <pre>
+{
+    "title": "Inception",
+    "director": "Christopher Nolan",
+    "releaseYear": 2010
+}
+            </pre>
+        </li>
+        <li>
+            <strong>PUT /movies/:id</strong>
+            <p>Update an existing movie by its ID. Example JSON body:</p>
+            <pre>
+{
+    "title": "Updated Title"
+}
+            </pre>
+        </li>
+        <li>
+            <strong>DELETE /movies/:id</strong>
+            <p>Delete a movie by its ID.</p>
+        </li>
+    </ul>
+
+    <h2>Response Format</h2>
+    <p>All responses are in JSON format.</p>
+</body>
+</html>
